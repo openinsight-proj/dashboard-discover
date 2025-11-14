@@ -55,7 +55,7 @@ func init() {
 	rootCmd.PersistentFlags().StringVar(&cfg.WatchResourceLabels, "watch-resource-labels", "dashboard=true", "kube labels to selector desire Resources")
 	rootCmd.PersistentFlags().StringVar(&cfg.SubFolderLabel, "sub-folder-label", "", "create sub folder from resource label. If set, it take priority of --namespace-to-folder flag")
 	rootCmd.PersistentFlags().StringVar(&cfg.Folder, "folder", "./tmp", "folder to save file")
-	rootCmd.PersistentFlags().BoolVar(&cfg.NamespaceToFolder, "namespace-to-folder", false, "use namespace to to create sub folder")
+	rootCmd.PersistentFlags().BoolVar(&cfg.NamespaceToFolder, "namespace-to-folder", true, "use namespace to to create sub folder")
 	rootCmd.PersistentFlags().StringSliceVar(&cfg.Resources, "resources", []string{"configmap", "grafanadashboards.integreatly.org"}, `resources to add to folder, usage: --resources="v1,v2" --resources="v3"`)
 	rootCmd.PersistentFlags().BoolVar(&cfg.EnableReload, "enable-reload", false, "enable reload")
 	rootCmd.PersistentFlags().StringVar(&cfg.RequestReloadURL, "request-reload-url", "http://localhost:3000/api/admin/provisioning/dashboards/reload", "URL to which send a request after a configmap got reloaded")
@@ -91,16 +91,6 @@ func main() {
 	if err != nil {
 		os.Exit(1)
 	}
-}
-
-func (c Config) CheckResource(resource string) bool {
-	for _, r := range c.Resources {
-		if r == resource {
-			return true
-		}
-	}
-
-	return false
 }
 
 func NewConfigMapDiscover(restCfg *rest.Config) (cache.Controller, error) {
@@ -291,24 +281,24 @@ func StartDiscover() {
 		return
 	}
 
-	if cfg.CheckResource("configmap") {
-		controller, err := NewConfigMapDiscover(restCfg)
-		if err != nil {
-			zap.S().Error(err)
+	for _, v := range cfg.Resources {
+		switch v {
+		case "configmap":
+			controller, err := NewConfigMapDiscover(restCfg)
+			if err != nil {
+				zap.S().Error(err)
+			}
+
+			go controller.RunWithContext(context.Background())
+			zap.S().Infof("configmap discovery started")
+		case "grafanadashboards.integreatly.org":
+			discover, err := NewGrafanaDashboardV4Discover(restCfg)
+			if err != nil {
+				zap.S().Error(err)
+			}
+
+			zap.S().Infof("grafanadashboards(v4) discovery started")
+			go discover.RunWithContext(context.Background())
 		}
-
-		go controller.RunWithContext(context.Background())
-		zap.S().Infof("configmap discovery started")
-	}
-
-	if cfg.CheckResource("grafanadashboards.integreatly.org") {
-		discover, err := NewGrafanaDashboardV4Discover(restCfg)
-		if err != nil {
-			zap.S().Error(err)
-		}
-
-		// need run with block
-		zap.S().Infof("grafanadashboards(v4) discovery started")
-		discover.RunWithContext(context.Background())
 	}
 }
