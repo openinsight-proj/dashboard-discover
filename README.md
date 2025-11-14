@@ -1,12 +1,41 @@
 # Dashboard-discover
 
+This tool watches Kubernetes resources (such as ConfigMap or custom resources like GrafanaDashboards.integreatly.org)
+based on specified labels, and automatically saves their content to local files in a configurable directory structure. 
+It is designed to support Grafana dashboard provisioning by syncing dashboards from the cluster to the filesystem, 
+with optional reload notifications sent to Grafana’s HTTP API.
+
+## Flags
+
+| Flag                      | Default                                                          | Description                                                                                                                             |
+|---------------------------|------------------------------------------------------------------|-----------------------------------------------------------------------------------------------------------------------------------------|
+| `--log-level`             | `info`                                                           | Log level (e.g., `debug`, `info`, `warn`, `error`).                                                                                     |
+| `--health-server-addr`    | `:8082`                                                          | Address for the health check HTTP server.                                                                                               |
+| `--kubeconfig`            | *unset*                                                          | Path to the kubeconfig file. If not specified, defaults to `$HOME/.kube/config` or the `KUBECONFIG` environment variable.               |
+| `--watch-resource-labels` | `dashboard=true`                                                 | Kubernetes label selector used to identify resources to watch (e.g., `app=grafana`).                                                    |
+| `--sub-folder-label`      | *empty*                                                          | If set, creates subfolders using the value of this label from each watched resource. Takes precedence over `--namespace-to-folder`.     |
+| `--folder`                | `./tmp`                                                          | Local directory where synced resources are saved.                                                                                       |
+| `--namespace-to-folder`   | `true`                                                           | Organize files into subdirectories by namespace (ignored if `--sub-folder-label` is set).                                               |
+| `--resources`             | `["configmap", "grafanadashboards.integreatly.org"]`             | Resource types to watch. Can be specified multiple times (e.g., `--resources=configmap --resources=grafanadashboards.integreatly.org`). |
+| `--enable-reload`         | `false`                                                          | Enable sending an HTTP POST request to reload Grafana dashboards after updates.                                                         |
+| `--request-reload-url`    | `http://localhost:3000/api/admin/provisioning/dashboards/reload` | URL to trigger Grafana dashboard provisioning reload.                                                                                   |
+| `--request-user`          | *(from `REQUEST_USER` env var)*                                  | Username for basic authentication when sending reload requests.                                                                         |
+| `--request-password`      | *(from `REQUEST_PASSWORD` env var)*                              | Password for basic authentication when sending reload requests.                                                                         |
+
+> Note: If --request-user or --request-password are not provided via flags, the tool will attempt to read them from the 
+> REQUEST_USER and REQUEST_PASSWORD environment variables respectively.
+
 ## Build
+
+```binary
+go build -o dashboard-discover .
+```
 
 ```dockerfile
 docker build -t ghcr.io/openinsight-proj/dashboard-discover:dev .
 ```
 
-## Run
+## Usage
 
 ### binary
 ```yaml
@@ -14,8 +43,7 @@ docker build -t ghcr.io/openinsight-proj/dashboard-discover:dev .
   --log-level=debug \
   --kubeconfig=./kubeconfig.yaml \
   --watch-resource-labels=dashboard=true \
-  --folder=./tmp \
-  --namespace-to-folder=true
+  --folder=./tmp
 ```
 
 ### docker
@@ -24,7 +52,10 @@ docker run --rm -it \
   -p 8080:8080 \
   -v ./kubeconfig.yaml:/app/kubeconfig.yaml \
   ghcr.io/openinsight-proj/dashboard-discover:dev \
-  --kubeconfig /app/kubeconfig.yaml
+  --log-level=debug \
+  --kubeconfig /app/kubeconfig.yaml \
+  --watch-resource-labels=dashboard=true \
+  --folder=./tmp
 ```
 
 ### kube
@@ -63,7 +94,7 @@ roleRef:
   apiGroup: rbac.authorization.k8s.io
 ```
 
-2. deploy
+2. deploy Deployment
 ```yaml
 apiVersion: apps/v1
 kind: Deployment
@@ -140,76 +171,7 @@ data:
       "fiscalYearStartMonth": 0,
       "graphTooltip": 0,
       "links": [],
-      "panels": [
-        {
-          "datasource": {
-            "type": "prometheus",
-            "uid": "PBFA97CFB590B2093"
-          },
-          "fieldConfig": {
-            "defaults": {
-              "color": {
-                "mode": "thresholds"
-              },
-              "mappings": [],
-              "thresholds": {
-                "mode": "absolute",
-                "steps": [
-                  {
-                    "color": "green",
-                    "value": 0
-                  },
-                  {
-                    "color": "red",
-                    "value": 80
-                  }
-                ]
-              }
-            },
-            "overrides": []
-          },
-          "gridPos": {
-            "h": 4,
-            "w": 3,
-            "x": 0,
-            "y": 0
-          },
-          "id": 1,
-          "options": {
-            "colorMode": "value",
-            "graphMode": "area",
-            "justifyMode": "auto",
-            "orientation": "auto",
-            "percentChangeColorMode": "standard",
-            "reduceOptions": {
-              "calcs": [
-                "lastNotNull"
-              ],
-              "fields": "",
-              "values": false
-            },
-            "showPercentChange": false,
-            "textMode": "auto",
-            "wideLayout": true
-          },
-          "pluginVersion": "12.1.3",
-          "targets": [
-            {
-              "datasource": {
-                "type": "prometheus",
-                "uid": "PBFA97CFB590B2093"
-              },
-              "editorMode": "code",
-              "expr": "count(up)",
-              "legendFormat": "__auto",
-              "range": true,
-              "refId": "A"
-            }
-          ],
-          "title": "New panel",
-          "type": "stat"
-        }
-      ],
+      "panels": [],
       "preload": false,
       "schemaVersion": 41,
       "tags": [],
@@ -217,7 +179,7 @@ data:
         "list": []
       },
       "time": {
-        "from": "now-6h",
+        "from": "now-1h",
         "to": "now"
       },
       "timepicker": {},
@@ -257,76 +219,7 @@ spec:
       "fiscalYearStartMonth": 0,
       "graphTooltip": 0,
       "links": [],
-      "panels": [
-        {
-          "datasource": {
-            "type": "prometheus",
-            "uid": "PBFA97CFB590B2093"
-          },
-          "fieldConfig": {
-            "defaults": {
-              "color": {
-                "mode": "thresholds"
-              },
-              "mappings": [],
-              "thresholds": {
-                "mode": "absolute",
-                "steps": [
-                  {
-                    "color": "green",
-                    "value": 0
-                  },
-                  {
-                    "color": "red",
-                    "value": 80
-                  }
-                ]
-              }
-            },
-            "overrides": []
-          },
-          "gridPos": {
-            "h": 4,
-            "w": 3,
-            "x": 0,
-            "y": 0
-          },
-          "id": 1,
-          "options": {
-            "colorMode": "value",
-            "graphMode": "area",
-            "justifyMode": "auto",
-            "orientation": "auto",
-            "percentChangeColorMode": "standard",
-            "reduceOptions": {
-              "calcs": [
-                "lastNotNull"
-              ],
-              "fields": "",
-              "values": false
-            },
-            "showPercentChange": false,
-            "textMode": "auto",
-            "wideLayout": true
-          },
-          "pluginVersion": "12.1.3",
-          "targets": [
-            {
-              "datasource": {
-                "type": "prometheus",
-                "uid": "PBFA97CFB590B2093"
-              },
-              "editorMode": "code",
-              "expr": "count(up)",
-              "legendFormat": "__auto",
-              "range": true,
-              "refId": "A"
-            }
-          ],
-          "title": "New panel",
-          "type": "stat"
-        }
-      ],
+      "panels": [],
       "preload": false,
       "schemaVersion": 41,
       "tags": [],
@@ -334,7 +227,7 @@ spec:
         "list": []
       },
       "time": {
-        "from": "now-6h",
+        "from": "now-1h",
         "to": "now"
       },
       "timepicker": {},
