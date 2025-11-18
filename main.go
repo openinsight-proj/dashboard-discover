@@ -33,34 +33,34 @@ var (
 )
 
 type Config struct {
-	LogLevel            string
-	HealthServerAddr    string
-	KubConfig           string
-	WatchResourceLabels string
-	SubFolderLabel      string
-	Folder              string
-	NamespaceToFolder   bool
-	Resources           []string
-	EnableReload        bool
-	RequestReloadURL    string
-	RequestUser         string
-	RequestPassword     string
+	LogLevel                 string
+	TelemetryAddress         string
+	KubConfig                string
+	ConfigMapSelector        string
+	GrafanadashboardSelector string
+	LabelAsSubFolder         string
+	Folder                   string
+	NamespaceAsSubFolder     bool
+	EnableReload             bool
+	RequestReloadURL         string
+	RequestUser              string
+	RequestPassword          string
 }
 
 func init() {
 	cfg = Config{}
 	rootCmd.PersistentFlags().StringVar(&cfg.LogLevel, "log-level", "info", "log level")
-	rootCmd.PersistentFlags().StringVar(&cfg.HealthServerAddr, "health-server-addr", ":8082", "health server address")
+	rootCmd.PersistentFlags().StringVar(&cfg.TelemetryAddress, "telemetry-address", ":8082", "health server address")
 	rootCmd.PersistentFlags().StringVar(&cfg.KubConfig, "kubeconfig", "", "path to the kubeconfig file, if not specified, default is $HOME/.kube/config or from env var KUBECONFIG")
-	rootCmd.PersistentFlags().StringVar(&cfg.WatchResourceLabels, "watch-resource-labels", "dashboard=true", "kube labels to selector desire Resources")
-	rootCmd.PersistentFlags().StringVar(&cfg.SubFolderLabel, "sub-folder-label", "", "create sub folder from resource label. If set, it take priority of --namespace-to-folder flag")
+	rootCmd.PersistentFlags().StringVar(&cfg.ConfigMapSelector, "configmap-selector", "dashboard=true,grafana=true", "Kubernetes label selector to filter which ConfigMaps to watch (format: key=value, supports multiple via comma separation)")
+	rootCmd.PersistentFlags().StringVar(&cfg.GrafanadashboardSelector, "grafanadashboard-selector", "dashboard=true", "Kubernetes label selector to filter which grafanadashboards.integreatly.org to watch (format: key=value, supports multiple via comma separation)")
+	rootCmd.PersistentFlags().StringVar(&cfg.LabelAsSubFolder, "label-as-subfolder", "folder", "save files into a subfolder named by the value of a specific resource label. Takes priority over the --namespace-as-subfolder flag if set")
 	rootCmd.PersistentFlags().StringVar(&cfg.Folder, "folder", "./tmp", "folder to save file")
-	rootCmd.PersistentFlags().BoolVar(&cfg.NamespaceToFolder, "namespace-to-folder", true, "use namespace to to create sub folder")
-	rootCmd.PersistentFlags().StringSliceVar(&cfg.Resources, "resources", []string{"configmap", "grafanadashboards.integreatly.org"}, `resources to add to folder, usage: --resources="v1,v2" --resources="v3"`)
+	rootCmd.PersistentFlags().BoolVar(&cfg.NamespaceAsSubFolder, "namespace-as-subfolder", true, "Save files into subfolders named after their namespace")
 	rootCmd.PersistentFlags().BoolVar(&cfg.EnableReload, "enable-reload", false, "enable reload")
 	rootCmd.PersistentFlags().StringVar(&cfg.RequestReloadURL, "request-reload-url", "http://localhost:3000/api/admin/provisioning/dashboards/reload", "URL to which send a request after a configmap got reloaded")
-	rootCmd.PersistentFlags().StringVar(&cfg.RequestUser, "request-user", "", "user to whom the request is sent")
-	rootCmd.PersistentFlags().StringVar(&cfg.RequestPassword, "request-password", "", "password to whom the request is sent")
+	rootCmd.PersistentFlags().StringVar(&cfg.RequestUser, "request-user", "", "user to whom the request is sent, or from `REQUEST_USER` env var")
+	rootCmd.PersistentFlags().StringVar(&cfg.RequestPassword, "request-password", "", "password to whom the request is sent, or from `REQUEST_PASSWORD` env var")
 	if cfg.RequestUser == "" {
 		cfg.RequestUser = os.Getenv("REQUEST_USER")
 	}
@@ -99,19 +99,19 @@ func NewConfigMapDiscover(restCfg *rest.Config) (cache.Controller, error) {
 		return nil, err
 	}
 
-	_, err = labels.Parse(cfg.WatchResourceLabels)
+	_, err = labels.Parse(cfg.ConfigMapSelector)
 	if err != nil {
-		return nil, fmt.Errorf("unable to parse %s: %w", cfg.WatchResourceLabels, err)
+		return nil, fmt.Errorf("unable to parse %s: %w", cfg.ConfigMapSelector, err)
 	}
 
 	_, controller := cache.NewInformerWithOptions(cache.InformerOptions{
 		ListerWatcher: &cache.ListWatch{
 			ListWithContextFunc: func(ctx context.Context, options v1.ListOptions) (runtime.Object, error) {
-				options.LabelSelector = cfg.WatchResourceLabels
+				options.LabelSelector = cfg.ConfigMapSelector
 				return client.CoreV1().ConfigMaps("").List(ctx, options)
 			},
 			WatchFuncWithContext: func(ctx context.Context, options v1.ListOptions) (watch.Interface, error) {
-				options.LabelSelector = cfg.WatchResourceLabels
+				options.LabelSelector = cfg.ConfigMapSelector
 				options.Watch = true
 				return client.CoreV1().ConfigMaps("").Watch(ctx, options)
 			},
@@ -195,15 +195,15 @@ func NewGrafanaDashboardV4Discover(restCfg *rest.Config) (cache.Controller, erro
 		return nil, err
 	}
 
-	_, err = labels.Parse(cfg.WatchResourceLabels)
+	_, err = labels.Parse(cfg.GrafanadashboardSelector)
 	if err != nil {
-		return nil, fmt.Errorf("unable to parse %s: %w", cfg.WatchResourceLabels, err)
+		return nil, fmt.Errorf("unable to parse %s: %w", cfg.GrafanadashboardSelector, err)
 	}
 
 	_, controller := cache.NewInformerWithOptions(cache.InformerOptions{
 		ListerWatcher: &cache.ListWatch{
 			ListWithContextFunc: func(ctx context.Context, options v1.ListOptions) (runtime.Object, error) {
-				options.LabelSelector = cfg.WatchResourceLabels
+				options.LabelSelector = cfg.GrafanadashboardSelector
 				result := &v1alpha1.GrafanaDashboardList{}
 				err = client.Get().Resource("grafanadashboards").VersionedParams(&options, scheme.ParameterCodec).Do(ctx).Into(result)
 				if err != nil {
@@ -213,7 +213,7 @@ func NewGrafanaDashboardV4Discover(restCfg *rest.Config) (cache.Controller, erro
 				return result, nil
 			},
 			WatchFuncWithContext: func(ctx context.Context, options v1.ListOptions) (watch.Interface, error) {
-				options.LabelSelector = cfg.WatchResourceLabels
+				options.LabelSelector = cfg.GrafanadashboardSelector
 				options.Watch = true
 				return client.Get().Resource("grafanadashboards").VersionedParams(&options, scheme.ParameterCodec).Watch(ctx)
 			},
@@ -270,8 +270,8 @@ func HealthServer() {
 		fmt.Fprintf(w, "ok")
 	})
 
-	zap.S().Infof("health server listening on %s", cfg.HealthServerAddr)
-	zap.S().Fatal(http.ListenAndServe(cfg.HealthServerAddr, nil))
+	zap.S().Infof("health server listening on %s", cfg.TelemetryAddress)
+	zap.S().Fatal(http.ListenAndServe(cfg.TelemetryAddress, nil))
 }
 
 func StartDiscover() {
@@ -281,24 +281,23 @@ func StartDiscover() {
 		return
 	}
 
-	for _, v := range cfg.Resources {
-		switch v {
-		case "configmap":
-			controller, err := NewConfigMapDiscover(restCfg)
-			if err != nil {
-				zap.S().Error(err)
-			}
-
-			go controller.RunWithContext(context.Background())
-			zap.S().Infof("configmap discovery started")
-		case "grafanadashboards.integreatly.org":
-			discover, err := NewGrafanaDashboardV4Discover(restCfg)
-			if err != nil {
-				zap.S().Error(err)
-			}
-
-			zap.S().Infof("grafanadashboards(v4) discovery started")
-			go discover.RunWithContext(context.Background())
+	if cfg.ConfigMapSelector != "" {
+		controller, err := NewConfigMapDiscover(restCfg)
+		if err != nil {
+			zap.S().Error(err)
 		}
+
+		go controller.RunWithContext(context.Background())
+		zap.S().Infof("configmap discovery started")
+	}
+
+	if cfg.GrafanadashboardSelector != "" {
+		discover, err := NewGrafanaDashboardV4Discover(restCfg)
+		if err != nil {
+			zap.S().Error(err)
+		}
+
+		zap.S().Infof("grafanadashboards(v4) discovery started")
+		go discover.RunWithContext(context.Background())
 	}
 }

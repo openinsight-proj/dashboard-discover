@@ -1,29 +1,8 @@
 # Dashboard-discover
 
 This tool watches Kubernetes resources (such as ConfigMap or custom resources like GrafanaDashboards.integreatly.org)
-based on specified labels, and automatically saves their content to local files in a configurable directory structure. 
-It is designed to support Grafana dashboard provisioning by syncing dashboards from the cluster to the filesystem, 
-with optional reload notifications sent to Grafana’s HTTP API.
+based on specified labels, and automatically saves their content to local files in a configurable directory structure.
 
-## Flags
-
-| Flag                      | Default                                                          | Description                                                                                                                             |
-|---------------------------|------------------------------------------------------------------|-----------------------------------------------------------------------------------------------------------------------------------------|
-| `--log-level`             | `info`                                                           | Log level (e.g., `debug`, `info`, `warn`, `error`).                                                                                     |
-| `--health-server-addr`    | `:8082`                                                          | Address for the health check HTTP server.                                                                                               |
-| `--kubeconfig`            | *unset*                                                          | Path to the kubeconfig file. If not specified, defaults to `$HOME/.kube/config` or the `KUBECONFIG` environment variable.               |
-| `--watch-resource-labels` | `dashboard=true`                                                 | Kubernetes label selector used to identify resources to watch (e.g., `app=grafana`).                                                    |
-| `--sub-folder-label`      | *empty*                                                          | If set, creates subfolders using the value of this label from each watched resource. Takes precedence over `--namespace-to-folder`.     |
-| `--folder`                | `./tmp`                                                          | Local directory where synced resources are saved.                                                                                       |
-| `--namespace-to-folder`   | `true`                                                           | Organize files into subdirectories by namespace (ignored if `--sub-folder-label` is set).                                               |
-| `--resources`             | `["configmap", "grafanadashboards.integreatly.org"]`             | Resource types to watch. Can be specified multiple times (e.g., `--resources=configmap --resources=grafanadashboards.integreatly.org`). |
-| `--enable-reload`         | `false`                                                          | Enable sending an HTTP POST request to reload Grafana dashboards after updates.                                                         |
-| `--request-reload-url`    | `http://localhost:3000/api/admin/provisioning/dashboards/reload` | URL to trigger Grafana dashboard provisioning reload.                                                                                   |
-| `--request-user`          | *(from `REQUEST_USER` env var)*                                  | Username for basic authentication when sending reload requests.                                                                         |
-| `--request-password`      | *(from `REQUEST_PASSWORD` env var)*                              | Password for basic authentication when sending reload requests.                                                                         |
-
-> Note: If --request-user or --request-password are not provided via flags, the tool will attempt to read them from the 
-> REQUEST_USER and REQUEST_PASSWORD environment variables respectively.
 
 ## Build
 
@@ -37,16 +16,35 @@ docker build -t ghcr.io/openinsight-proj/dashboard-discover:dev .
 
 ## Usage
 
-### binary
+### Flags
+
+```shell
+Flags:
+      --configmap-selector string           Kubernetes label selector to filter which ConfigMaps to watch (format: key=value, supports multiple via comma separation) (default "dashboard=true,grafana=true")
+      --enable-reload                       enable reload
+      --folder string                       folder to save file (default "./tmp")
+      --grafanadashboard-selector string    Kubernetes label selector to filter which grafanadashboards.integreatly.org to watch (format: key=value, supports multiple via comma separation) (default "dashboard=true")
+  -h, --help                                help for dashboard-discover
+      --kubeconfig string                   path to the kubeconfig file, if not specified, default is $HOME/.kube/config or from env var KUBECONFIG
+      --label-as-subfolder string           save files into a subfolder named by the value of a specific resource label. Takes priority over the --namespace-as-subfolder flag if set (default "folder")
+      --log-level string                    log level (default "info")
+      --namespace-as-subfolder              Save files into subfolders named after their namespace (default true)
+      --request-password REQUEST_PASSWORD   password to whom the request is sent, or from REQUEST_PASSWORD env var
+      --request-reload-url string           URL to which send a request after a configmap got reloaded (default "http://localhost:3000/api/admin/provisioning/dashboards/reload")
+      --request-user REQUEST_USER           user to whom the request is sent, or from REQUEST_USER env var
+      --telemetry-address string            health server address (default ":8082")
+
+```
+
+### Binary
 ```yaml
 ./dashboard-discover \
   --log-level=debug \
   --kubeconfig=./kubeconfig.yaml \
-  --watch-resource-labels=dashboard=true \
   --folder=./tmp
 ```
 
-### docker
+### Docker
 ```shell
 docker run --rm -it \
   -p 8080:8080 \
@@ -54,11 +52,10 @@ docker run --rm -it \
   ghcr.io/openinsight-proj/dashboard-discover:dev \
   --log-level=debug \
   --kubeconfig /app/kubeconfig.yaml \
-  --watch-resource-labels=dashboard=true \
   --folder=./tmp
 ```
 
-### kube
+### Kube
 
 1. create RBAC
 ```yaml
@@ -104,39 +101,19 @@ metadata:
 spec:
   template:
     spec:
+      serviceAccountName: grafana-serviceaccount
+      volumes:
+        - name: grafana-plugins
+          emptyDir: {}
       containers:
         - name: dashboard-discover
           image: "ghcr.io/openinsight-proj/dashboard-discover:dev"
           imagePullPolicy: IfNotPresent
           args:
-          - "--log-level=debug"
           - "--folder=/opt/plugins/dashboards"
-          - "--watch-resource-labels=dashboard=true"
-          - "--namespace-to-folder=true"
-          - "--health-server-addr=:8082"
           volumeMounts:
             - name: grafana-plugins
               mountPath: /opt/plugins
-          livenessProbe:
-            httpGet:
-              path: /healthz
-              port: 8082
-              scheme: HTTP
-            initialDelaySeconds: 120
-            timeoutSeconds: 5
-            periodSeconds: 10
-            successThreshold: 1
-            failureThreshold: 6
-          readinessProbe:
-            httpGet:
-              path: /healthz
-              port: 8082
-              scheme: HTTP
-            initialDelaySeconds: 30
-            timeoutSeconds: 5
-            periodSeconds: 10
-            successThreshold: 1
-            failureThreshold: 6
 ```
 
 3. test
@@ -148,6 +125,8 @@ metadata:
   namespace: default
   labels:
     dashboard: 'true'
+    grafana: 'true'
+    folder: "test"
 data:
   hello.json: |-
     {
