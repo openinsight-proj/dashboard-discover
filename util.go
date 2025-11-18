@@ -69,9 +69,9 @@ func Hash(ds string) string {
 }
 
 func GetNamespace(namespace string, labels map[string]string) string {
-	if cfg.SubFolderLabel != "" {
+	if cfg.LabelAsSubFolder != "" {
 		for k, v := range labels {
-			if k == cfg.SubFolderLabel {
+			if k == cfg.LabelAsSubFolder {
 				return v
 			}
 		}
@@ -148,7 +148,7 @@ func DeleteFile(fileName, subPath string) error {
 
 func BuildPath(fileName, subPath string) string {
 	p := path.Join(cfg.Folder)
-	if cfg.NamespaceToFolder {
+	if cfg.NamespaceAsSubFolder {
 		p = path.Join(p, subPath)
 	}
 
