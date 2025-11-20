@@ -1,13 +1,13 @@
-name: Build and Push to GHCR
+name: Build and Push Release Images to GHCR
 
 on:
   push:
-    branches: [main]
-  pull_request:
-    branches: [main]
+    tags:
+      - 'v*'
 
 env:
   REGISTRY: ghcr.io/openinsight-proj
+  IMAGE_TAG: ${{ github.ref_name }}
 
 jobs:
   release-images:
@@ -16,12 +16,16 @@ jobs:
       packages: write
       contents: read
     steps:
-      - uses: actions/checkout@v4
+      - name: Checkout code
+        uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
 
-      - name: Set image tag
-        run: echo "TAG=${GITHUB_SHA:0:8}" >> "$GITHUB_ENV"
+      - name: Extract commit SHA (short)
+        run: echo "COMMIT_SHA=${GITHUB_SHA:0:8}" >> "$GITHUB_ENV"
 
-      - uses: actions/setup-go@v5
+      - name: Set up Go
+        uses: actions/setup-go@v5
         with:
           go-version: '1.24.1'
           cache: true
@@ -44,7 +48,10 @@ jobs:
         with:
           context: .
           platforms: linux/amd64,linux/arm64
-          push: ${{ github.event_name != 'pull_request' }}
-          tags: ${{ env.REGISTRY }}/dashboard-discover:${{ env.TAG }}
+          push: true
+          tags: |
+            ${{ env.REGISTRY }}/dashboard-discover:${{ env.IMAGE_TAG }}
+            ${{ env.REGISTRY }}/dashboard-discover:sha-${{ env.COMMIT_SHA }}
+            ${{ env.REGISTRY }}/dashboard-discover:latest
           cache-from: type=gha
           cache-to: type=gha,mode=max
