@@ -1,6 +1,6 @@
 module github.com/openinsight-proj/dashboard-discover
 
-go 1.24.1
+go 1.26.2
 
 require (
 	github.com/grafana-operator/grafana-operator/v4 v4.10.1
