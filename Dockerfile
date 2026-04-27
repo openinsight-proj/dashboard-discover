@@ -1,4 +1,4 @@
-FROM golang:1.24.1-alpine AS builder
+FROM golang:1.26.2-alpine AS builder
 
 ENV GO111MODULE=on \
     CGO_ENABLED=0 \
@@ -14,7 +14,7 @@ COPY . .
 
 RUN go build -trimpath -ldflags="-w -s" -o dashboard-discover .
 
-FROM alpine:3.20
+FROM alpine:3.21
 
 RUN apk --no-cache add ca-certificates tzdata
 
